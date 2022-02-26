@@ -4,18 +4,22 @@ const START_SEARCH_NO = 'START_SEARCH_NO';
 const START_SEARCH_YES = 'START_SEARCH_YES';
 const GREETING = 'GREETING';
 const AUSTRALIA_YES = 'AUSTRALIA_YES';
-const AU_LOC_PROVIDED = 'AU_LOC_PROVIDED';
+const PAGINAWEB_ECOMMERCE = 'PAGINAWEB_ECOMMERCE';
 const PREFERENCE_PROVIDED = 'PREFERENCE_PROVIDED';
 const PREF_CLEANUP = 'PREF_CLEANUP';
 const PREF_REVEGETATION = 'PREF_REVEGETATION';
 const PREF_BIO_SURVEY = 'PREF_BIO_SURVEY';
 const PREF_CANVASSING = 'PREF_CANVASSING';
+const MANDA_A_COTIZAR = 'MANDA_A_COTIZAR'
 const AUSTRALIA_NO = 'AUSTRALIA_NO';
+const PAGINAS_WEB= 'PAGINAS_WEB';
+const TIENDA_ONLINE= 'TIENDA_ONLINE';
 const OTHER_HELP_YES = 'OTHER_HELP_YES';
 const FACEBOOK_GRAPH_API_BASE_URL = 'https://graph.facebook.com/v2.6/';
 const GOOGLE_GEOCODING_API = 'https://maps.googleapis.com/maps/api/geocode/json?address=';
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_GEOCODING_API_KEY = process.env.GOOGLE_GEOCODING_API_KEY;
+const EMAILER= require('./mailer');
 
 const
   request = require('request'),
@@ -95,6 +99,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
+//recibe el primer mensaje
 function handleMessage(sender_psid, message) {
   // check if it is a location message
   console.log('handleMEssage message:', JSON.stringify(message));
@@ -102,83 +107,19 @@ function handleMessage(sender_psid, message) {
   const locationAttachment = message && message.attachments && message.attachments.find(a => a.type === 'location');
   const coordinates = locationAttachment && locationAttachment.payload && locationAttachment.payload.coordinates;
 
-  if (coordinates && !isNaN(coordinates.lat) && !isNaN(coordinates.long)){
-    handleMessageWithLocationCoordinates(sender_psid, coordinates.lat, coordinates.long);
-    return;
-  } else if (message.nlp && message.nlp.entities && message.nlp.entities.location && message.nlp.entities.location.find(g => g.confidence > 0.8 && g.suggested)){
-    const locationName = message.nlp.entities.location.find(loc => loc.confidence > 0.8 && loc.suggested);
-    if (locationName.value){
-      const locationNameEncoded = encodeURIComponent(locationName.value);
-      callGeocodingApi(locationNameEncoded, sender_psid, handleConfirmLocation);
-    }
-    return;
-  } else if (message.nlp && message.nlp.entities && message.nlp.entities.greetings && message.nlp.entities.greetings.find(g => g.confidence > 0.8 && g.value === 'true')){
+  //manda a saludo
+  if (message.nlp && message.nlp.entities && message.nlp.entities.greetings && message.nlp.entities.greetings.find(g => g.confidence > 0.8 && g.value === 'true')){
     handlePostback(sender_psid, {payload: GREETING});
     return;
   }
 }
 
-function handleConfirmLocation(sender_psid, geocoding_location, geocoding_formattedAddr){
-  console.log('Geocoding api result: ', geocoding_location);
-  const query = {$and: [{'user_id': sender_psid}, { 'status': AUSTRALIA_YES }]};
-  const update = {
-    $set: { "location.lat": geocoding_location.lat, "location.long": geocoding_location.lng, status: AU_LOC_PROVIDED }
-  };
-  const options = {upsert: false, new: true};
 
-  ChatStatus.findOneAndUpdate(query, update, options, (err, cs) => {
-    console.log('handleConfirmLocation update location:', cs);
-    if (err){
-      console.log('handleConfirmLocation Error in updating coordinates:', err);
-    } else if (cs){
-      const response = {
-        "attachment":{
-          "type":"template",
-          "payload":{
-            "template_type":"button",
-            "text":`${geocoding_formattedAddr}. Is it your address?`,
-            "buttons":[
-              {
-                "type":"postback",
-                "payload": AU_LOC_PROVIDED,
-                "title":"Yes"
-              },
-              {
-                "type":"postback",
-                "payload": AUSTRALIA_YES,
-                "title":"No"
-              }
-            ]
-          }
-        }
-      };
-      callSendAPI(sender_psid, response);
-    }
-  });
-}
 
-function handleMessageWithLocationCoordinates(sender_psid, coordinates_lat, coordinates_long){
-  const query = {$and: [
-    { 'user_id': sender_psid },
-    { 'status': AUSTRALIA_YES }
-  ]};
-  const update = {
-    $set: { "location.lat": coordinates_lat, "location.long": coordinates_long, status: AU_LOC_PROVIDED }
-  };
-  const options = {upsert: false, new: true};
 
-  ChatStatus.findOneAndUpdate(query, update, options, (err, cs) => {
-    console.log('handleMessage update coordinates:', cs);
-    if (err){
-      console.log('Error in updating coordinates:', err);
-    } else if (cs){
-      askForActivityPreference(sender_psid);
-    }
-  });
-}
 
-function askForActivityPreference(sender_psid){
-  const response = {
+function detalles_desarrollo_web(sender_psid){
+  /*const response = {
     "attachment": {
       "type": "template",
       "payload": {
@@ -234,26 +175,119 @@ function askForActivityPreference(sender_psid){
       }
     }
   };
+  */
+
+  const response_2 = {
+    "text": "De cuanto es tu presupuesto para gastar en tu Pagina Web/Tienda e-commerce?",
+    "quick_replies":[
+      {
+        "content_type":"text",
+        "title":"Menos de 15 000 MXN",
+        "payload": OTHER_HELP_YES
+      },
+      {
+        "content_type":"text",
+        "title":"Entre 16 000-25 000",
+        "payload": MANDA_A_COTIZAR
+      },
+      {
+        "content_type":"text",
+        "title":"No lo se",
+        "payload": MANDA_A_COTIZAR
+      }
+    ]
+  };
   callSendAPI(sender_psid, response);
+  callSendAPI(sender_psid, response_2);
 }
 
 function handleStartSearchYesPostback(sender_psid){
   const yesPayload = {
-    "text": " Ok, I have to get to know you a little bit more for this. Do you live in Australia?",
-    "quick_replies":[
-      {
-        "content_type":"text",
-        "title":"Yes!",
-        "payload": AUSTRALIA_YES
-      },
-      {
-        "content_type":"text",
-        "title":"Nope.",
-        "payload": AUSTRALIA_NO
+    "text": " Bare Technology es una empresa especializada en desarrollo de software. Seguramente haremos grandes cosas juntos. Estos son los servicios que realizamos",
+    "attachment":{
+      "type":"template",
+      "payload":{
+        "template_type":"generic",
+        "elements":[
+           {
+            "title":"Que tipo de software es tu proyecto ?",
+            "image_url":"https://raw.githubusercontent.com/pepsicroos/images/main/pagina-web.png",
+            "buttons":[
+              {
+                "type":"postback",
+                "payload": PAGINAWEB_ECOMMERCE,//PAGINAWEB-ECOMMERCE
+                "title":"Seleccionar"
+              }
+            ]
+          }
+        ]
       }
-    ]
+    }
+  };
+  const yesPayload2 = {
+    "attachment":{
+      "type":"template",
+      "payload":{
+        "template_type":"generic",
+        "elements":[
+           {
+            "image_url":"https://raw.githubusercontent.com/pepsicroos/images/main/desarrollo-apps.png",
+            "buttons":[
+              {
+                "type":"postback",
+                "payload": MANDA_A_COTIZAR,//desarrollo apps
+                "title":"Seleccionar"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  };
+  const yesPayload3 = {
+    "attachment":{
+      "type":"template",
+      "payload":{
+        "template_type":"generic",
+        "elements":[
+           {
+            "image_url":"https://raw.githubusercontent.com/pepsicroos/images/main/software-empresas.png",
+            "buttons":[
+              {
+                "type":"postback",
+                "payload": MANDA_A_COTIZAR, //software empresa
+                "title":"Seleccionar"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  };
+  const yesPayload4 = {
+    "attachment":{
+      "type":"template",
+      "payload":{
+        "template_type":"generic",
+        "elements":[
+           {
+            "image_url":"https://raw.githubusercontent.com/pepsicroos/images/main/marketing-digital.png",
+            "buttons":[
+              {
+                "type":"postback",
+                "payload": MANDA_A_COTIZAR, //marketing digital
+                "title":"Seleccionar"
+              }
+            ]
+          }
+        ]
+      }
+    }
   };
   callSendAPI(sender_psid, yesPayload);
+  callSendAPI(sender_psid, yesPayload2);
+  callSendAPI(sender_psid, yesPayload3);
+  callSendAPI(sender_psid, yesPayload4);
 }
 
 function handleStartSearchNoPostback(sender_psid){
@@ -270,40 +304,137 @@ function handleStartSearchNoPostback(sender_psid){
   callSendAPI(sender_psid, noPayload);
 }
 
-function handleOtherHelpPostback(sender_psid){
-  const campaigns = {
-    "attachment":{
-       "type":"template",
-       "payload":{
-         "template_type":"generic",
-         "elements":[
-            {
-             "title":"We need your help",
-             "image_url":"http://awsassets.panda.org/img/original/wwf_infographic_tropical_deforestation.jpg",
-             "subtitle":"to save our natural world",
-             "buttons":[
-               {
-                 "type":"web_url",
-                 "url":"https://donate.wwf.org.au/campaigns/rhinoappeal/",
-                 "title":"Javan Rhino Appeal"
-               },{
-                 "type":"web_url",
-                 "url":"https://donate.wwf.org.au/campaigns/donate/#AD",
-                 "title":"Adopt an Animal"
-               },{
-                 "type":"web_url",
-                 "url":"https://donate.wwf.org.au/campaigns/wildcards/",
-                 "title":"Send a wildcard"
-               }
-             ]
-           }
-         ]
-       }
-     }
+function oferta_Pagina_ecommerce(sender_psid){
+
+  const desicion_pag_ecommerce = {
+    "text": "Que tipo de proyecto necesitas",
+    "quick_replies":[
+      {
+        "content_type":"text",
+        "title":"Pagina web o Landing Page",
+        "payload": PAGINAS_WEB
+      },
+      {
+        "content_type":"text",
+        "title":"Tienda en linea E-commerce",
+        "payload": TIENDA_ONLINE
+      },
+      {
+        "content_type":"text",
+        "title":"Otro tipo",
+        "payload": MANDA_A_COTIZAR
+      }
+    ]
   };
-  callSendAPI(sender_psid, campaigns);
+
+  callSendAPI(sender_psid, desicion_pag_ecommerce);
+  
 }
 
+function oferta_pagina_web(sender_psid){
+  const campaigns = {
+    "text": " Tenemos una oferta especial para ti ",
+    "attachment":{
+      "type":"image", 
+      "payload":{
+        "url":"https://raw.githubusercontent.com/pepsicroos/images/main/oferta-pagina-web.jpg", 
+        "is_reusable":true
+      }
+     }
+  };
+
+  const respuestaAceptar = {
+    "quick_replies":[
+      {
+        "content_type":"text",
+        "title":"Me interesa¡",
+        "payload": MANDA_A_COTIZAR
+      }
+    ]
+  };
+  callSendAPI(sender_psid, campaigns);
+  callSendAPI(sender_psid, respuestaAceptar);
+}
+
+function oferta_tienda_online(sender_psid){
+  const campaigns = {
+    "text": " Tenemos una oferta especial para ti ",
+    "attachment":{
+      "type":"image", 
+      "payload":{
+        "url":"https://raw.githubusercontent.com/pepsicroos/images/main/oferta-e-commerce-01.jpg", 
+        "is_reusable":true
+      }
+      
+     },
+     "message": {
+      "text": "U+1F449 Paquete inicial: Tu Tienda Online \n U+1F4B2 Precio: $13 990 MXN \n INCLUYE: \n  U+2705 Diseño de tienda \n U+2705 Tienda Online \n U+2705 Hosting y dominio \n  U+2705 Panel del administración \n U+2705 Integrable con Instagram, Facebook \n U+2705 Integrable con WhatsApp Bussiness \n  U+2705 E-mail de empresa"
+      }
+  };
+
+  const respuestaAceptar = {
+    "quick_replies":[
+      {
+        "content_type":"text",
+        "title":"Me interesa¡",
+        "payload": MANDA_A_COTIZAR
+      }
+    ]
+  };
+  callSendAPI(sender_psid, campaigns);
+  callSendAPI(sender_psid, respuestaAceptar);
+}
+
+function mandaACotizacionPostBack(sender_psid){
+
+
+  const email = {
+    "message":{
+      "text": "Cual es tu e-mail? :",
+      "quick_replies":[
+        {
+          "content_type":"user_email",
+         
+          "payload":"<POSTBACK_PAYLOAD>",
+          
+        }
+        //"mid": "m_AG5Hz2Uq7tuwNEhXfYYKj8mJEM_QPpz5jdCK48PnKAjSdjfipqxqMvK8ma6AC8fplwlqLP_5cgXIbu7I3rBN0P",
+        //"text": "<EMAIL_ADDRESS>"
+      ]
+    }
+  };
+
+  const phoneNumber = {
+    "message":{
+      "text": "Cual es tu telefono? :",
+      "quick_replies":[
+        {
+          "content_type":"user_phone_number",
+         
+          "payload":"<PHONE_NUMBER>"
+          
+        }
+        //"mid": "m_AG5Hz2Uq7tuwNEhXfYYKj8mJEM_QPpz5jdCK48PnKAjSdjfipqxqMvK8ma6AC8fplwlqLP_5cgXIbu7I3rBN0P",
+        //"text": "<EMAIL_ADDRESS>"
+      ]
+    }
+  };
+
+  const agradecimiento = {
+    "text": " Bare Technology te agradece tu confianza y muy pronto estaremos en contacto. Saludos "
+  };
+
+
+  callSendAPI(sender_psid, email);
+  callSendAPI(sender_psid, phoneNumber);
+  callSendAPI(sender_psid, agradecimiento);
+  EMAILER.sendEmail();
+  
+}
+
+
+
+//primer mensaje
 function handleGreetingPostback(sender_psid){
   request({
     url: `${FACEBOOK_GRAPH_API_BASE_URL}${sender_psid}`,
@@ -319,21 +450,16 @@ function handleGreetingPostback(sender_psid){
     } else {
       var bodyObj = JSON.parse(body);
       const name = bodyObj.first_name;
-      greeting = "Hi " + name + ". ";
+      greeting = "Hola " + name + ". ";
     }
-    const message = greeting + "Would you like to join a community of like-minded pandas in your area?";
+    const message = greeting + " Mi nombre es Tony, soy un robot y te ayudare a darte la información necesaria para que puedas concretar tu proyecto ☺️ Da click en el botón para continuar.";
     const greetingPayload = {
       "text": message,
       "quick_replies":[
         {
           "content_type":"text",
-          "title":"Yes!",
+          "title":"Empezar!",
           "payload": START_SEARCH_YES
-        },
-        {
-          "content_type":"text",
-          "title":"No, thanks.",
-          "payload": START_SEARCH_NO
         }
       ]
     };
@@ -430,6 +556,8 @@ function updatePreference(sender_psid, perference, callback){
   });
 }
 
+
+//funcion que recibe los mensajes y respuestas del usuario y las dirige a cada función correspondiente
 function handlePostback(sender_psid, received_postback) {
   // Get the payload for the postback
   const payload = received_postback.payload;
@@ -442,18 +570,25 @@ function handlePostback(sender_psid, received_postback) {
     case START_SEARCH_NO:
       updateStatus(sender_psid, payload, handleStartSearchNoPostback);
       break;
-    case OTHER_HELP_YES:
-      updateStatus(sender_psid, payload, handleOtherHelpPostback);
+    case PAGINAWEB_ECOMMERCE:
+      updateStatus(sender_psid, payload, oferta_Pagina_ecommerce);
       break;
-    case AUSTRALIA_YES:
-      updateStatus(sender_psid, payload, handleAustraliaYesPostback);
+    case PAGINAS_WEB:
+      updateStatus(sender_psid, payload, oferta_pagina_web);
       break;
+      case TIENDA_ONLINE:
+        updateStatus(sender_psid, payload, oferta_tienda_online);
+        break;
     case AU_LOC_PROVIDED:
-      updateStatus(sender_psid, payload, askForActivityPreference);
+      updateStatus(sender_psid, payload, detalles_desarrollo_web);
       break;
     case GREETING:
       updateStatus(sender_psid, payload, handleGreetingPostback);
       break;
+    case MANDA_A_COTIZAR:
+      updateStatus(sender_psid, payload, mandaACotizacionPostBack);
+      break;
+
     case PREF_CLEANUP:
     case PREF_REVEGETATION:
     case PREF_BIO_SURVEY:
@@ -482,31 +617,10 @@ function callSendAPI(sender_psid, response) {
     "method": "POST",
     "json": request_body
   }, (err, res, body) => {
-    console.log("Message Sent Response body:", body);
+    console.log("Tu mensaje enviado fue:", body);
     if (err) {
       console.error("Unable to send message:", err);
     }
   });
 }
 
-function callGeocodingApi(address, sender_psid, callback){
-  console.log('before calling geocoding api with address:', address);
-  request({
-    "url": `${GOOGLE_GEOCODING_API}${address}&key=${GOOGLE_GEOCODING_API_KEY}`,
-    "method": "GET"
-  }, (err, res, body) => {
-    console.log('after calling geocoding api with result:', body);
-    if (err) {
-      console.error("Unable to retrieve location from Google API:", err);
-    } else {
-      const bodyObj = JSON.parse(body);
-      if (bodyObj.status === 'OK'){
-        if (bodyObj.results && bodyObj.results[0] && bodyObj.results[0].geometry && bodyObj.results[0].geometry.location){
-          callback(sender_psid, bodyObj.results[0].geometry.location, bodyObj.results[0].formatted_address);
-        }
-      } else{
-        console.error("Unable to retrieve location (status non-OK):", bodyObj);
-      }
-    }
-  });
-}
